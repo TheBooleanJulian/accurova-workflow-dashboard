@@ -1,0 +1,33 @@
+# zeabur.yaml
+# Place this at the repo root.
+# Zeabur reads it to discover and configure each service.
+
+apiVersion: zeabur.com/v1
+services:
+  # ── Backend: Express API ──────────────────────────────────
+  - name: accurova-workflow-api
+    type: git
+    root: ./backend          # sub-directory in the monorepo
+    build:
+      command: npm ci
+    start:
+      command: npm start
+    env:
+      PORT: "3001"
+      # Set SUPABASE_URL and SUPABASE_SERVICE_KEY in the Zeabur dashboard
+      # Set FRONTEND_URL to the deployed frontend URL (for CORS)
+    healthCheck:
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 30
+
+  # ── Frontend: Vite SPA ────────────────────────────────────
+  - name: accurova-workflow-app
+    type: git
+    root: ./frontend
+    build:
+      command: npm ci && npm run build
+      output: dist            # Zeabur will serve this as static files
+    env:
+      # Must match the backend service's public URL — set in Zeabur dashboard
+      VITE_API_URL: "https://accurova-workflow-api.zeabur.app"
