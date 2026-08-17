@@ -1,7 +1,9 @@
 # Accurova Workflow Dashboard
 
-Full-stack project workflow tracker for photography & videography.  
-Stack: **React + Vite** → **Express API** → **Supabase** · Deployed on **Zeabur** · CI/CD via **GitHub Actions**
+Photoshoot processing tracker for photography & videography.
+A PC-side script scans shoot folders and writes RAW/processed counts into a Google Sheet; this dashboard reads that sheet and lets you layer status, client, priority and remarks on top.
+
+Stack: **React + Vite** → **Express API** → **Google Sheets** · Deployed on **Zeabur** · CI/CD via **GitHub Actions**
 
 ```
 accurova-workflow/
@@ -17,8 +19,6 @@ accurova-workflow/
 │   ├── src/
 │   │   └── index.js
 │   └── .env.example
-├── supabase/
-│   └── schema.sql     # Run this once in Supabase SQL editor
 ├── .github/
 │   └── workflows/
 │       └── deploy.yml # CI/CD: test on dev, deploy on main
@@ -27,13 +27,26 @@ accurova-workflow/
 
 ---
 
-## 1 · Supabase setup
+## 1 · Google Sheet setup
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor** → paste and run `supabase/schema.sql`.
-3. Go to **Project Settings → API** and note:
-   - `Project URL` → `SUPABASE_URL`
-   - `service_role` key → `SUPABASE_SERVICE_KEY` *(keep this secret — server only)*
+The sheet is populated by your folder-scan script with these columns (first tab):
+
+`Photoshoot Name`, `Date`, `Root Folder`, `Full Path`, `RAW Count`, `Processed Count`, `Ratio %`, `Status`, `Last Scanned`, `Status Icon`, `Remarks`
+
+Add four more columns for the dashboard to manage manually — they're not written by the scan script:
+
+`Client`, `Type`, `Priority`, `Tags`
+
+The backend needs its own Google Cloud service account to read/write the sheet:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create (or reuse) a project → enable the **Google Sheets API**.
+2. **IAM & Admin → Service Accounts** → **Create Service Account**. No roles needed at the project level.
+3. Open the service account → **Keys** → **Add Key** → **Create new key** → JSON. Download it.
+4. From the JSON, note `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL`, and `private_key` → `GOOGLE_SERVICE_ACCOUNT_KEY`.
+5. Open the actual Google Sheet → **Share** → paste the service account's `client_email` → give it **Editor** access.
+6. The sheet ID is the long string in its URL: `https://docs.google.com/spreadsheets/d/`**`SHEET_ID`**`/edit` → `GOOGLE_SHEET_ID`.
+
+The dashboard can edit `Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`. It never touches `Photoshoot Name`, `Date`, `Root Folder`, `Full Path`, `RAW Count`, `Processed Count`, `Ratio %`, `Last Scanned` or `Status Icon` — those stay owned by your scan script so the two never fight over the same cells. There's no create/delete from the dashboard either; rows come from real folders your script finds.
 
 ---
 
@@ -43,7 +56,7 @@ accurova-workflow/
 
 ```bash
 cd backend
-cp .env.example .env          # fill in SUPABASE_URL + SUPABASE_SERVICE_KEY
+cp .env.example .env          # fill in GOOGLE_SERVICE_ACCOUNT_EMAIL/KEY + GOOGLE_SHEET_ID
 npm install
 npm run dev                   # http://localhost:3001
 ```
@@ -83,11 +96,11 @@ Go to **Settings → Secrets → Actions** and add:
 
 | Secret | Value |
 |--------|-------|
-| `SUPABASE_URL_TEST` | Supabase URL for a test project |
-| `SUPABASE_SERVICE_KEY_TEST` | service_role key for test project |
 | `VITE_API_URL` | `https://accurova-workflow-api.zeabur.app` |
 | `ZEABUR_DEPLOY_HOOK_BACKEND` | Zeabur deploy webhook URL (see step 4) |
 | `ZEABUR_DEPLOY_HOOK_FRONTEND` | Zeabur deploy webhook URL (see step 4) |
+
+Backend tests don't touch the real sheet — validation runs before any Google Sheets API call — so no Google credentials are needed in CI.
 
 ---
 
@@ -100,9 +113,10 @@ Go to **Settings → Secrets → Actions** and add:
 
    **Backend** (`accurova-workflow-api`):
    ```
-   SUPABASE_URL          = https://xxxx.supabase.co
-   SUPABASE_SERVICE_KEY  = eyJ...
-   FRONTEND_URL          = https://accurova-workflow-app.zeabur.app
+   GOOGLE_SERVICE_ACCOUNT_EMAIL = xxxx@xxxx.iam.gserviceaccount.com
+   GOOGLE_SERVICE_ACCOUNT_KEY   = -----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n
+   GOOGLE_SHEET_ID              = 1ucQvqmJji7kvbrUJTCRZFZibomG5belAWQrQutu4VFQ
+   FRONTEND_URL                 = https://workflow.accurova.com
    ```
 
    **Frontend** (`accurova-workflow-app`):
@@ -111,6 +125,16 @@ Go to **Settings → Secrets → Actions** and add:
    ```
 
 5. In each service → **Settings → Deploy Hooks**, create a hook and copy the URL into the GitHub Secrets above.
+
+6. **Custom domain** — the frontend is served at `https://workflow.accurova.com`, not the default `*.zeabur.app` domain:
+   - In the `accurova-workflow-app` service → **Settings → Domains** → **Add Domain** → enter `workflow.accurova.com`.
+   - Zeabur will give you a CNAME target — add a `CNAME` record for `workflow` pointing to it in your DNS provider for `accurova.com`.
+   - Once DNS resolves, Zeabur issues the TLS cert automatically.
+   - Keep `VITE_API_URL` and the CI secret `VITE_API_URL` pointed at the backend's URL (`accurova-workflow-api.zeabur.app`, or its own custom domain if you set one) — that's unrelated to the frontend's domain.
+
+   `accurova.com`'s DNS is proxied through **Cloudflare**, which needs two adjustments since Cloudflare terminates TLS in front of Zeabur:
+   - **SSL/TLS mode** — set to **Full (strict)** (or **Full**) in Cloudflare → SSL/TLS. Leaving it on **Flexible** causes a redirect loop against Zeabur's HTTPS redirect.
+   - **Cert issuance** — Zeabur validates the domain via an HTTP challenge, which can fail while the record is proxied (orange cloud). If verification stalls, temporarily switch the `workflow` CNAME to **DNS only** (grey cloud) in Cloudflare, wait for Zeabur to confirm the domain/cert, then switch it back to **Proxied** (orange cloud).
 
 ---
 
@@ -130,19 +154,88 @@ Or just open a PR from `dev` → `main` and merge it — Actions handles the res
 
 ## 6 · API reference
 
+Rows are identified by their sheet row number (`id`). There's no create/delete endpoint — rows come from your scan script.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Health check |
-| GET | `/projects` | List all projects (`?stage=Edit&priority=High`) |
-| GET | `/projects/:id` | Single project |
-| POST | `/projects` | Create project |
-| PATCH | `/projects/:id` | Update fields (stage, progress, notes, …) |
-| DELETE | `/projects/:id` | Delete project |
+| GET | `/projects` | List all shoots (`?status=Editing&priority=High&type=Photo`) |
+| GET | `/projects/:id` | Single shoot |
+| PATCH | `/projects/:id` | Update `status`, `remarks`, `client`, `type`, `priority`, or `tags` |
+
+A project object looks like:
+
+```json
+{
+  "id": 2,
+  "name": "2026-07-24_ClientA",
+  "date": "2026-07-24",
+  "root_folder": "D:/Shoots",
+  "full_path": "D:/Shoots/2026-07-24_ClientA",
+  "raw_count": 1240,
+  "processed_count": 860,
+  "ratio": 69,
+  "status": "Editing",
+  "last_scanned": "2026-08-01T22:10:00Z",
+  "status_icon": "🟡",
+  "remarks": "",
+  "client": "",
+  "type": "",
+  "priority": "",
+  "tags": []
+}
+```
 
 ---
 
 ## 7 · Extending
 
-- **Telegram alerts**: add a cron in the backend that queries Supabase for overdue projects and fires a message via your bot-core library.
-- **Auth**: enable Supabase Auth + update the RLS policy to `auth.uid() = owner_id`.
-- **File attachments**: use Supabase Storage for brief + deliverable files per project.
+- **Telegram alerts**: add a cron in the backend that reads the sheet for shoots stuck below a ratio threshold and fires a message via your bot-core library.
+- **Auth**: add an API-key or JWT middleware in front of the `/projects` routes (see roadmap below — there's none today).
+- **Multi-tab sheets**: if you split shoots across multiple tabs (e.g. by year), swap `doc.sheetsByIndex[0]` in `backend/src/index.js` for logic that reads all tabs and merges rows.
+
+---
+
+## 8 · Future roadmap
+
+Ideas for where this could go next, roughly in priority order:
+
+- **API authentication** — every `/projects` route is currently open to anyone who can reach the backend. Add an API-key or JWT middleware before this goes anywhere near real client data.
+- **Telegram alerts** — low-ratio / stalled-shoot notifications via a scheduled job (see Extending above); low effort, high value.
+- **Activity log / audit trail** — the Sheets API supports revision history, but a lightweight in-app log of who changed Status/Remarks and when would be more useful day-to-day.
+- **Reporting** — throughput trends, average time-to-complete, ratio distribution across shoots.
+- **Bulk actions** — multi-select shoots in the table view to bulk-update status/priority.
+- **Integrations** — Slack/Discord notifications, calendar sync for shoot dates.
+- **PWA / mobile-friendly UI** — useful for checking status on-site during a shoot.
+- **Automated changelog** — adopt Conventional Commits + a tool like `semantic-release` or `release-please` to generate the changelog below and bump versions automatically instead of by hand.
+
+Contributions and suggestions welcome — open an issue.
+
+---
+
+## 9 · Changelog
+
+Versioning follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`):
+
+- **MAJOR** — breaking changes (API/schema changes that require migration)
+- **MINOR** — new features, backwards compatible (`feat:` commits)
+- **PATCH** — bug fixes, backwards compatible (`fix:` commits)
+
+### [2.0.0] — 2026-08-02
+
+- **Breaking:** replaced Supabase with a Google Sheet as the data store, driven by an external folder-scan script. Dropped `stage`/`deadline`/`photo_count`/`video_count` and the create/delete endpoints; added `date`, `root_folder`, `full_path`, `raw_count`, `processed_count`, `ratio`, `last_scanned`, `status_icon`, plus manually-managed `client`/`type`/`priority`/`tags` columns. Dashboard redesigned around Status/Ratio instead of a Shoot→Deliver kanban.
+
+### [1.0.0] — 2026-07-24
+
+- Initial release: Express + Supabase REST API (`/projects` CRUD, `/health`), React + Vite dashboard, CI/CD via GitHub Actions, Zeabur deployment config.
+
+---
+
+## 10 · License
+
+This project is dual licensed.
+
+- **Community Edition** — [GNU Affero General Public License v3 (AGPLv3)](LICENSE). Free to use, modify, and self-host. If you distribute a modified version or run it as a network service, you must make the corresponding source available.
+- **Commercial License** — for organisations that want to embed, modify, or distribute this software without AGPLv3's obligations. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+Built by [@TheBooleanJulian](https://github.com/TheBooleanJulian).

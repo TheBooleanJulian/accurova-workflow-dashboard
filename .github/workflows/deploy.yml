@@ -38,9 +38,8 @@ jobs:
       - name: Run tests
         run: npm test
         env:
-          # Tests use a dedicated test Supabase project — never prod
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL_TEST }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY_TEST }}
+          # Tests never touch the real sheet — validation happens before any
+          # Google Sheets API call, so no credentials are required here.
           PORT: 3001
 
   # ── 2. FRONTEND LINT / BUILD ──────────────────────────────────────────────

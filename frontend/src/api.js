@@ -26,8 +26,6 @@ export const api = {
     return req(`/projects${qs ? "?" + qs : ""}`);
   },
 
-  getProject:    (id)      => req(`/projects/${id}`),
-  createProject: (body)    => req("/projects", { method: "POST",   body: JSON.stringify(body) }),
-  updateProject: (id, body) => req(`/projects/${id}`, { method: "PATCH",  body: JSON.stringify(body) }),
-  deleteProject: (id)      => req(`/projects/${id}`, { method: "DELETE" }),
+  getProject:    (id)       => req(`/projects/${id}`),
+  updateProject: (id, body) => req(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 };

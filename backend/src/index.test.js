@@ -34,14 +34,14 @@ test("GET /health returns 200 with status ok", async () => {
   assert.ok(typeof body.ts === "string", "ts should be a string");
 });
 
-test("POST /projects with missing required fields returns 400", async () => {
-  const { status, body } = await req("POST", "/projects", { name: "Missing fields" });
+test("PATCH /projects/:id with no valid fields returns 400", async () => {
+  const { status, body } = await req("PATCH", "/projects/2", { bogusField: "x" });
   assert.equal(status, 400);
-  assert.ok(body.error, "error message should be present");
+  assert.equal(body.error, "No valid fields to update");
 });
 
-test("PATCH /projects/:id with no valid fields returns 400", async () => {
-  const { status, body } = await req("PATCH", "/projects/1", { bogusField: "x" });
+test("PATCH /projects/:id rejects script-owned fields (raw_count, ratio, ...)", async () => {
+  const { status, body } = await req("PATCH", "/projects/2", { raw_count: 999, ratio: 50 });
   assert.equal(status, 400);
   assert.equal(body.error, "No valid fields to update");
 });

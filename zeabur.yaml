@@ -14,7 +14,8 @@ services:
       command: npm start
     env:
       PORT: "3001"
-      # Set SUPABASE_URL and SUPABASE_SERVICE_KEY in the Zeabur dashboard
+      # Set GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and
+      # GOOGLE_SHEET_ID in the Zeabur dashboard
       # Set FRONTEND_URL to the deployed frontend URL (for CORS)
     healthCheck:
       path: /health
