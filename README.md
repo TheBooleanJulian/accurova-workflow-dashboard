@@ -121,6 +121,11 @@ Backend tests don't touch the real sheet — validation runs before any Google S
 1. Go to [zeabur.com](https://zeabur.com) → **New Project**.
 2. Choose **Deploy from GitHub** → select `accurova-workflow`.
 3. Zeabur reads `zeabur.yaml` and creates two services automatically.
+
+> **Already have a project with only one service?** This happens if the repo was connected without Zeabur picking up `zeabur.yaml`'s two-service split — you'll see a single service (often named after the repo) that 404s on every route. Fix it without starting over:
+> 1. Open that service → **Settings**. If it already owns the `workflow.accurova.com` domain, repurpose it as the **frontend**: Root Directory `frontend`, Build Command `npm ci && npm run build`, Output Directory `dist`.
+> 2. Left sidebar → **Add Service** → same GitHub repo → this becomes the **backend**: Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`. Name it `accurova-workflow-api` (or note whatever URL Zeabur assigns it).
+> 3. Continue with step 4 below for env vars, then step 5 for deploy hooks.
 4. For each service, add environment variables in the Zeabur dashboard:
 
    **Backend** (`accurova-workflow-api`):
