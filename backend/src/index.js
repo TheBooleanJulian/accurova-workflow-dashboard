@@ -80,6 +80,20 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", ts: new Date().toISOString() });
 });
 
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+// Shared-secret gate in front of every /projects route. Fails closed: if
+// API_KEY isn't configured, requests are rejected rather than left open.
+function requireApiKey(req, res, next) {
+  if (!process.env.API_KEY) {
+    return res.status(503).json({ error: "Server misconfigured: API_KEY not set" });
+  }
+  if (req.get("x-api-key") !== process.env.API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+app.use("/projects", requireApiKey);
+
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 
 // GET /projects — list all, optional ?status= ?priority= ?type= filter

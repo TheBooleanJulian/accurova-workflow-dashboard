@@ -8,7 +8,11 @@ const BASE =
 
 async function req(path, opts = {}) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...opts.headers },
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": import.meta.env.VITE_API_KEY || "",
+      ...opts.headers,
+    },
     ...opts,
   });
   if (!res.ok) {

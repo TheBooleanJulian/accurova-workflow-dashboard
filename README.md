@@ -50,6 +50,17 @@ The dashboard can edit `Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`
 
 ---
 
+## Security
+
+The backend is a public URL that can read and rewrite rows in your Google Sheet, so it's gated two ways:
+
+1. **Shared API key** — every `/projects` request needs an `x-api-key` header matching the backend's `API_KEY` env var. The frontend sends it automatically from `VITE_API_KEY`, baked in at build time. This stops casual/automated hits but is **not a real secret** once shipped — anyone who opens devtools on the deployed site can read it out of the bundle.
+2. **Access control in front of the site** (the actual gate) — put `workflow.accurova.com` behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) (Zero Trust → Access → Applications), restricted to your and your team's email addresses. Free for small teams, and it blocks the request before it ever reaches Zeabur. Do this before pointing real client data at the deployed URL.
+
+Generate a strong key with `openssl rand -hex 32` and set it as `API_KEY` (backend) and the matching `VITE_API_KEY` (frontend) — see §4 for where in Zeabur, and add `VITE_API_KEY` to the GitHub Secrets in §3 so CI bakes it into the build.
+
+---
+
 ## 2 · Local development
 
 ### Backend
@@ -97,6 +108,7 @@ Go to **Settings → Secrets → Actions** and add:
 | Secret | Value |
 |--------|-------|
 | `VITE_API_URL` | `https://accurova-workflow-api.zeabur.app` |
+| `VITE_API_KEY` | Same value as the backend's `API_KEY` (see Security above) |
 | `ZEABUR_DEPLOY_HOOK_BACKEND` | Zeabur deploy webhook URL (see step 4) |
 | `ZEABUR_DEPLOY_HOOK_FRONTEND` | Zeabur deploy webhook URL (see step 4) |
 
@@ -117,11 +129,13 @@ Backend tests don't touch the real sheet — validation runs before any Google S
    GOOGLE_SERVICE_ACCOUNT_KEY   = -----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n
    GOOGLE_SHEET_ID              = 1ucQvqmJji7kvbrUJTCRZFZibomG5belAWQrQutu4VFQ
    FRONTEND_URL                 = https://workflow.accurova.com
+   API_KEY                      = (generate with: openssl rand -hex 32)
    ```
 
    **Frontend** (`accurova-workflow-app`):
    ```
    VITE_API_URL = https://accurova-workflow-api.zeabur.app
+   VITE_API_KEY = (same value as the backend's API_KEY)
    ```
 
 5. In each service → **Settings → Deploy Hooks**, create a hook and copy the URL into the GitHub Secrets above.
@@ -200,7 +214,6 @@ A project object looks like:
 
 Ideas for where this could go next, roughly in priority order:
 
-- **API authentication** — every `/projects` route is currently open to anyone who can reach the backend. Add an API-key or JWT middleware before this goes anywhere near real client data.
 - **Telegram alerts** — low-ratio / stalled-shoot notifications via a scheduled job (see Extending above); low effort, high value.
 - **Activity log / audit trail** — the Sheets API supports revision history, but a lightweight in-app log of who changed Status/Remarks and when would be more useful day-to-day.
 - **Reporting** — throughput trends, average time-to-complete, ratio distribution across shoots.
@@ -220,6 +233,10 @@ Versioning follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATC
 - **MAJOR** — breaking changes (API/schema changes that require migration)
 - **MINOR** — new features, backwards compatible (`feat:` commits)
 - **PATCH** — bug fixes, backwards compatible (`fix:` commits)
+
+### [Unreleased]
+
+- Added shared-secret `API_KEY`/`VITE_API_KEY` auth on every `/projects` route (fails closed if unset). See [Security](#security).
 
 ### [2.0.0] — 2026-08-02
 

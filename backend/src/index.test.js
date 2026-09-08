@@ -1,3 +1,5 @@
+process.env.API_KEY ??= "test-key";
+
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -10,11 +12,11 @@ let server;
 before(() => new Promise((resolve) => { server = app.listen(PORT, resolve); }));
 after(()  => new Promise((resolve) => { server.close(resolve); }));
 
-function req(method, path, body) {
+function req(method, path, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const r = http.request(
       { hostname: "localhost", port: PORT, path, method,
-        headers: { "Content-Type": "application/json" } },
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.API_KEY, ...headers } },
       (res) => {
         let raw = "";
         res.on("data", (c) => { raw += c; });
@@ -32,6 +34,12 @@ test("GET /health returns 200 with status ok", async () => {
   assert.equal(status, 200);
   assert.equal(body.status, "ok");
   assert.ok(typeof body.ts === "string", "ts should be a string");
+});
+
+test("GET /projects without an API key returns 401", async () => {
+  const { status, body } = await req("GET", "/projects", undefined, { "x-api-key": "" });
+  assert.equal(status, 401);
+  assert.equal(body.error, "Unauthorized");
 });
 
 test("PATCH /projects/:id with no valid fields returns 400", async () => {

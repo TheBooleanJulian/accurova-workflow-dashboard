@@ -41,6 +41,7 @@ jobs:
           # Tests never touch the real sheet — validation happens before any
           # Google Sheets API call, so no credentials are required here.
           PORT: 3001
+          API_KEY: test-key
 
   # ── 2. FRONTEND LINT / BUILD ──────────────────────────────────────────────
   build-frontend:
@@ -68,6 +69,7 @@ jobs:
         env:
           # Points to production backend — Vite bakes this into the bundle
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
