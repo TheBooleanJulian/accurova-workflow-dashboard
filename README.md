@@ -1,9 +1,37 @@
+<div align="center">
+
 # Accurova Workflow Dashboard
 
-Photoshoot processing tracker for photography & videography.
-A PC-side script scans shoot folders and writes RAW/processed counts into a Google Sheet; this dashboard reads that sheet and lets you layer status, client, priority and remarks on top.
+**Photoshoot processing tracker for photography & videography, backed by a Google Sheet your scan script already writes to.**
 
-Stack: **React + Vite** → **Express API** → **Google Sheets** · Deployed on **Zeabur** · CI/CD via **GitHub Actions**
+![React](https://img.shields.io/badge/-React-61DAFB?logo=react&logoColor=black)
+![Express](https://img.shields.io/badge/-Express-000000?logo=express&logoColor=white)
+![Google Sheets](https://img.shields.io/badge/-Google%20Sheets-34A853?logo=googlesheets&logoColor=white)
+![Zeabur](https://img.shields.io/badge/-Zeabur-6C5CE7)
+![License](https://img.shields.io/badge/license-AGPLv3%20%2B%20Commercial-00D4C8.svg)
+
+</div>
+
+---
+
+## What it does
+
+A PC-side script scans shoot folders and writes RAW/processed counts into a Google Sheet; this dashboard reads that sheet and lets you layer status, client, priority and remarks on top. Stack: **React + Vite** → **Express API** → **Google Sheets** · Deployed on **Zeabur** · CI/CD via **GitHub Actions**.
+
+## Features
+
+- Reads and augments a Google Sheet populated by an external folder-scan script — no separate database
+- Dashboard can edit `Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`, while leaving scan-script-owned columns untouched
+- Shared API-key auth (`x-api-key`) on every `/projects` route, meant to sit behind a real access layer (e.g. Cloudflare Access) in front of the public URL
+- Filterable project list (`?status=`, `?priority=`, `?type=`) and single-shoot lookup/update endpoints
+- Two-service Zeabur deployment (frontend + backend) driven by `zeabur.yaml`, with GitHub Actions CI/CD (test on `dev`, deploy on `main`)
+- Custom domain (`workflow.accurova.com`) served through Cloudflare in front of Zeabur
+
+## Screenshots
+
+_Screenshots coming soon._
+
+## Project Structure
 
 ```
 accurova-workflow/
