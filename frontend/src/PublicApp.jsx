@@ -5,10 +5,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api.js";
-import { TYPE_ICON, statusColor, StatusChip, RatioBar, Spinner, GLOBAL_STYLES } from "./shared.jsx";
+import {
+  TYPE_ICON, statusColor, StatusChip, RatioBar, Spinner, GLOBAL_STYLES,
+  displayName, formatDate, displayRatio,
+} from "./shared.jsx";
 
 function ProjectCard({ project: p }) {
   const color = statusColor(p.status);
+  const ratio = displayRatio(p.ratio);
   return (
     <div className="project-card" style={{
       background: "#111820", border: "1px solid #ffffff0f",
@@ -16,24 +20,24 @@ function ProjectCard({ project: p }) {
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }} title={p.name}>
             {p.type && <span style={{ fontSize: 13 }}>{TYPE_ICON[p.type] || ""}</span>}
             <span style={{
               color: "#e8eaf0", fontWeight: 700, fontSize: 13,
               fontFamily: "JetBrains Mono, monospace",
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>{p.name}</span>
+            }}>{displayName(p.name)}</span>
           </div>
           <div style={{ color: "#5a6a7e", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
-            {p.client || p.date || "—"}
+            {formatDate(p.date)}{p.client ? ` · ${p.client}` : ""}
           </div>
         </div>
-        <StatusChip status={p.status} />
+        {p.status && <StatusChip status={p.status} />}
       </div>
       <RatioBar value={p.ratio} color={color} />
       <div style={{ marginTop: 8, textAlign: "right" }}>
         <span style={{ color: "#2a3a4a", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
-          {Number.isFinite(p.ratio) ? `${p.ratio}%` : "—"} processed
+          {ratio === null ? "—" : `${ratio}%`} processed
         </span>
       </div>
     </div>
@@ -78,6 +82,12 @@ export default function PublicApp() {
           <div style={{ fontSize: 9, letterSpacing: "0.3em", color: "#00d4c8", textTransform: "uppercase", marginBottom: 2 }}>Accurova</div>
           <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: "0.05em" }}>Shoot Progress</div>
         </div>
+
+        {!loading && projects.length > 0 && (
+          <div style={{ color: "#3a4a5e", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
+            {projects.length} shoot{projects.length === 1 ? "" : "s"}
+          </div>
+        )}
 
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search shoots…"
           style={{

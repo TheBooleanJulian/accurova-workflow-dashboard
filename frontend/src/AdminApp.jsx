@@ -5,7 +5,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { api, auth } from "./api.js";
-import { TYPE_ICON, PRIORITY_RANK, statusColor, StatusChip, RatioBar, Spinner, formatScanned, GLOBAL_STYLES } from "./shared.jsx";
+import {
+  TYPE_ICON, PRIORITY_RANK, statusColor, StatusChip, RatioBar, Spinner, formatScanned, GLOBAL_STYLES,
+  displayName, formatDate, displayRatio,
+} from "./shared.jsx";
 
 // ── LOGIN ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +71,7 @@ function LoginForm({ onSuccess }) {
 
 function ProjectCard({ project: p, onClick, selected }) {
   const color = statusColor(p.status);
+  const ratio = displayRatio(p.ratio);
   return (
     <div onClick={() => onClick(p)} className="project-card" style={{
       background:   selected ? "#1a2535" : "#111820",
@@ -78,16 +82,16 @@ function ProjectCard({ project: p, onClick, selected }) {
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }} title={p.name}>
             {p.type && <span style={{ fontSize: 13 }}>{TYPE_ICON[p.type] || ""}</span>}
             <span style={{
               color: "#e8eaf0", fontWeight: 700, fontSize: 13,
               fontFamily: "JetBrains Mono, monospace",
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>{p.name}</span>
+            }}>{displayName(p.name)}</span>
           </div>
           <div style={{ color: "#5a6a7e", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
-            {p.client || p.date || "—"}
+            {formatDate(p.date)}{p.client ? ` · ${p.client}` : ""}
           </div>
         </div>
         <StatusChip status={p.status} />
@@ -95,7 +99,7 @@ function ProjectCard({ project: p, onClick, selected }) {
       <RatioBar value={p.ratio} color={color} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
         <span style={{ color: "#2a3a4a", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
-          {Number.isFinite(p.ratio) ? `${p.ratio}%` : "—"} processed
+          {ratio === null ? "—" : `${ratio}%`} processed
         </span>
         <div style={{ display: "flex", gap: 8, color: "#4a5568", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
           <span>📷{p.raw_count}</span>
@@ -418,8 +422,8 @@ function Dashboard({ onLogout }) {
                     {filtered.map((p) => (
                       <tr key={p.id} className="table-row" onClick={() => setSelected(p)}
                         style={{ borderTop: "1px solid #ffffff08", background: selected?.id === p.id ? "#1a2535" : "transparent" }}>
-                        <td style={{ padding: "8px 10px", color: "#e8eaf0", fontWeight: 700 }}>{p.name}</td>
-                        <td style={{ padding: "8px 10px", color: "#8a9ab0" }}>{p.date}</td>
+                        <td style={{ padding: "8px 10px", color: "#e8eaf0", fontWeight: 700 }} title={p.name}>{displayName(p.name)}</td>
+                        <td style={{ padding: "8px 10px", color: "#8a9ab0" }}>{formatDate(p.date)}</td>
                         <td style={{ padding: "8px 10px" }}><StatusChip status={p.status} /></td>
                         <td style={{ padding: "8px 10px", color: "#8a9ab0" }}>{Number.isFinite(p.ratio) ? `${p.ratio}%` : "—"}</td>
                         <td style={{ padding: "8px 10px", color: "#8a9ab0" }}>{p.raw_count}</td>

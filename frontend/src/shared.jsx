@@ -17,6 +17,33 @@ export function statusColor(status) {
   return hit ? hit.color : NEUTRAL;
 }
 
+// Strips a leading "YYYY_MM_DD " / "YYYY-MM-DD " folder-name date prefix for
+// display — the date is already shown separately, and the prefix otherwise
+// eats the title's width before the actual event/client name is visible.
+// Cosmetic only: the underlying `name` field (and the scan script's data)
+// is untouched.
+export function displayName(name) {
+  const stripped = (name || "").replace(/^\d{4}[-_]\d{2}[-_]\d{2}[\s_-]*/, "").trim();
+  return stripped || name || "";
+}
+
+// Parsed manually (not `new Date(dateStr).toLocaleDateString()`) to avoid a
+// timezone-driven off-by-one day — "2026-10-15" is a plain calendar date,
+// not a UTC instant.
+export function formatDate(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr || "");
+  if (!m) return dateStr || "—";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Caps the displayed percentage at 100 — a shoot can genuinely have more
+// processed files than raw ones (multiple exports per RAW), but showing
+// e.g. "50033.3%" on a client-facing page reads as broken, not accurate.
+export function displayRatio(value) {
+  return Number.isFinite(value) ? Math.min(100, Math.round(value)) : null;
+}
+
 export function daysAgo(dateStr) {
   if (!dateStr) return null;
   const d = Math.floor((new Date() - new Date(dateStr)) / 86400000);
