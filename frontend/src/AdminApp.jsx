@@ -158,12 +158,25 @@ function editSelect(label, key, options, form, set) {
 }
 
 function DetailPanel({ project: initial, onClose, onUpdate }) {
-  const [form, setForm]     = useState(initial);
-  const [dirty, setDirty]   = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState("");
+  const [form, setForm]       = useState(initial);
+  const [dirty, setDirty]     = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState("");
+  const [linkStatus, setLinkStatus] = useState("");
 
-  useEffect(() => { setForm(initial); setDirty(false); setError(""); }, [initial]);
+  useEffect(() => { setForm(initial); setDirty(false); setError(""); setLinkStatus(""); }, [initial]);
+
+  const copyClientLink = async () => {
+    setLinkStatus("Generating…");
+    try {
+      const { token, shootCount } = await api.getClientLink(form.client);
+      const url = `${window.location.origin}/?token=${token}`;
+      await navigator.clipboard.writeText(url);
+      setLinkStatus(`Copied — covers ${shootCount} shoot${shootCount === 1 ? "" : "s"}`);
+    } catch (e) {
+      setLinkStatus(e.message);
+    }
+  };
 
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setDirty(true); };
 
@@ -213,6 +226,21 @@ function DetailPanel({ project: initial, onClose, onUpdate }) {
           {editSelect("Priority", "priority", ["High", "Medium", "Low"], form, set)}
         </div>
         {editField("Client", "client", form, set)}
+        <div style={{ marginTop: -8, marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={copyClientLink}
+            disabled={!form.client || dirty}
+            title={dirty ? "Save changes first" : "Generates (or reuses) this client's private link and copies it"}
+            style={{
+              background: "transparent", border: "1px solid #ffffff14", borderRadius: 5,
+              color: !form.client || dirty ? "#2a3a4e" : "#00d4c8",
+              fontFamily: "JetBrains Mono, monospace", fontSize: 10, letterSpacing: "0.08em",
+              padding: "5px 10px", cursor: !form.client || dirty ? "default" : "pointer",
+              textTransform: "uppercase",
+            }}
+          >Copy client link</button>
+          {linkStatus && <span style={{ color: "#4a5a6e", fontSize: 10, fontFamily: "JetBrains Mono, monospace" }}>{linkStatus}</span>}
+        </div>
         {editField("Tags (comma separated)", "tags_input", { ...form, tags_input: Array.isArray(form.tags) ? form.tags.join(", ") : form.tags },
           (k, v) => set("tags", v))}
 

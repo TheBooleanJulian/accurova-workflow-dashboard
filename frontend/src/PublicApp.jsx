@@ -1,7 +1,10 @@
 // frontend/src/PublicApp.jsx
-// Read-only, unauthenticated progress dashboard — no edit controls, no
+// Read-only, token-gated progress dashboard — no edit controls, no
 // remarks/tags/priority/raw-processed-count detail (see PUBLIC_FIELDS on the
-// backend). Linked to from the admin dashboard; links back to it via #admin.
+// backend). Each client gets a private link (?token=...) that scopes the
+// view to only their own shoots; without one, nothing is shown — this is
+// deliberately not a blanket "everyone's shoots" listing. Linked to from the
+// admin dashboard; links back to it via #admin.
 
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api.js";
@@ -29,7 +32,7 @@ function ProjectCard({ project: p }) {
             }}>{displayName(p.name)}</span>
           </div>
           <div style={{ color: "#5a6a7e", fontSize: 11, fontFamily: "JetBrains Mono, monospace" }}>
-            {formatDate(p.date)}{p.client ? ` · ${p.client}` : ""}
+            {formatDate(p.date)}
           </div>
         </div>
         {p.status && <StatusChip status={p.status} />}
@@ -44,7 +47,39 @@ function ProjectCard({ project: p }) {
   );
 }
 
+function Shell({ children }) {
+  return (
+    <div style={{
+      background: "#050d15", minHeight: "100vh",
+      color: "#e8eaf0", fontFamily: "JetBrains Mono, monospace",
+      display: "flex", flexDirection: "column",
+    }}>
+      <style>{GLOBAL_STYLES}</style>
+      {children}
+    </div>
+  );
+}
+
+function NoAccessGate() {
+  return (
+    <Shell>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ maxWidth: 360, textAlign: "center" }}>
+          <div style={{ fontSize: 9, letterSpacing: "0.3em", color: "#00d4c8", textTransform: "uppercase", marginBottom: 10 }}>Accurova</div>
+          <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 10 }}>Private link required</div>
+          <div style={{ color: "#5a6a7e", fontSize: 12, lineHeight: 1.6 }}>
+            This page only shows shoots to clients with their own private link.
+            If you're expecting to see your shoot progress here, ask your
+            photographer for your personal link.
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
 export default function PublicApp() {
+  const [token] = useState(() => new URLSearchParams(window.location.search).get("token") || "");
   const [projects, setProjects] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [apiError, setApiError] = useState("");
@@ -53,34 +88,30 @@ export default function PublicApp() {
   const fetchProjects = useCallback(async () => {
     setLoading(true); setApiError("");
     try {
-      setProjects(await api.listPublicProjects());
+      setProjects(await api.listPublicProjects(token));
     } catch (e) {
       setApiError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
-  useEffect(() => { fetchProjects(); }, [fetchProjects]);
+  useEffect(() => { if (token) fetchProjects(); }, [token, fetchProjects]);
+
+  if (!token) return <NoAccessGate />;
+
+  const clientName = projects[0]?.client || "";
 
   const filtered = projects
-    .filter((p) => !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.client || "").toLowerCase().includes(search.toLowerCase()))
+    .filter((p) => !search || p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   return (
-    <div style={{
-      background: "#050d15", minHeight: "100vh",
-      color: "#e8eaf0", fontFamily: "JetBrains Mono, monospace",
-      display: "flex", flexDirection: "column",
-    }}>
-      <style>{GLOBAL_STYLES}</style>
-
+    <Shell>
       <div style={{ padding: "14px 24px", borderBottom: "1px solid #ffffff0a", display: "flex", alignItems: "center", gap: 20, flexShrink: 0 }}>
         <div>
           <div style={{ fontSize: 9, letterSpacing: "0.3em", color: "#00d4c8", textTransform: "uppercase", marginBottom: 2 }}>Accurova</div>
-          <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: "0.05em" }}>Shoot Progress</div>
+          <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: "0.05em" }}>{clientName ? `${clientName} — Shoot Progress` : "Shoot Progress"}</div>
         </div>
 
         {!loading && projects.length > 0 && (
@@ -115,7 +146,7 @@ export default function PublicApp() {
             {filtered.map((p) => <ProjectCard key={p.id} project={p} />)}
             {filtered.length === 0 && (
               <div style={{ color: "#2a3a4e", fontSize: 13, padding: 40, gridColumn: "1/-1", textAlign: "center" }}>
-                No shoots to show.
+                {projects.length === 0 ? "No shoots found for this link." : "No shoots match your search."}
               </div>
             )}
           </div>
@@ -125,6 +156,6 @@ export default function PublicApp() {
       <div style={{ padding: "10px 24px", borderTop: "1px solid #ffffff0a", textAlign: "center" }}>
         <a href="#admin" style={{ color: "#2a3a4e", fontSize: 10, letterSpacing: "0.1em", textDecoration: "none" }}>Admin login →</a>
       </div>
-    </div>
+    </Shell>
   );
 }

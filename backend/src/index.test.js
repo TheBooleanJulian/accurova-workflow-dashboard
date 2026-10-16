@@ -59,9 +59,24 @@ test("GET /projects without an admin token returns 401", async () => {
   assert.equal(body.error, "Unauthorized");
 });
 
-test("GET /public/projects requires no auth", async () => {
-  const { status } = await req("GET", "/public/projects", undefined, { "x-admin-token": "" });
-  assert.notEqual(status, 401);
+test("GET /public/projects without a token returns 400, not everyone's data", async () => {
+  const { status, body } = await req("GET", "/public/projects", undefined, { "x-admin-token": "" });
+  assert.equal(status, 400);
+  assert.equal(body.error, "Missing access token");
+});
+
+test("GET /public/projects with a token present reaches the handler (not blocked by auth)", async () => {
+  // No real Google credentials in this test env, so this can't assert the
+  // full round trip (empty list for a bogus token) — just that providing a
+  // token gets past the "missing token" guard, unlike the no-token case above.
+  const { status } = await req("GET", "/public/projects?token=not-a-real-token", undefined, { "x-admin-token": "" });
+  assert.notEqual(status, 400);
+});
+
+test("POST /projects/link without a client returns 400", async () => {
+  const { status, body } = await req("POST", "/projects/link", { client: "" });
+  assert.equal(status, 400);
+  assert.equal(body.error, "client is required");
 });
 
 test("PATCH /projects/:id with no valid fields returns 400", async () => {

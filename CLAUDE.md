@@ -55,10 +55,31 @@ rewrite will blank it.
 ## Public vs admin dashboard
 Two views, one SPA, split by URL hash (not a path) because this is a
 static host with no server-side rewrite rules configured: `/` is the
-unauthenticated public progress page (`PublicApp.jsx`), `/#admin` is the
-password-gated full editing dashboard (`AdminApp.jsx`). The backend
-mirrors this split — `GET /public/projects` (no auth, stripped fields) vs
-`/projects` (requires `x-admin-token`, obtained from `POST /admin/login`).
-Don't widen `PUBLIC_FIELDS` in `backend/src/index.js` without checking
-whether that's meant to stay client-invisible (remarks, tags, priority,
-and exact raw/processed counts are deliberately excluded).
+public progress page (`PublicApp.jsx`), `/#admin` is the password-gated
+full editing dashboard (`AdminApp.jsx`). The backend mirrors this split —
+`GET /public/projects` (token-scoped, stripped fields) vs `/projects`
+(requires `x-admin-token`, obtained from `POST /admin/login`). Don't widen
+`PUBLIC_FIELDS` in `backend/src/index.js` without checking whether that's
+meant to stay client-invisible (remarks, tags, priority, and exact
+raw/processed counts are deliberately excluded).
+
+## The public dashboard is per-client, not a blanket listing
+This was deliberately reconsidered mid-project: an earlier version made
+`/public/projects` return every shoot, unauthenticated, to anyone with the
+link — a conscious simplicity tradeoff at the time. Once real data went
+live (~1,400 shoots, real client names), that read as an actual privacy
+exposure and got reversed. Don't revert to a blanket public listing even
+for convenience — `GET /public/projects` now requires `?token=`, matched
+against a `Client Token` column on each row (`POST /projects/link`
+generates/reuses one per client, propagated to every row sharing that
+`Client` name, case-insensitive exact match). No token → `400`. An
+unrecognized token → `[]`, not an error and not a fallback to "show
+everything."
+
+`row.set()` in `google-spreadsheet` silently no-ops on a header that
+doesn't exist in the sheet (no error, nothing written, no new column
+created) — if `Client Token` isn't already a header cell in the actual
+sheet, `POST /projects/link` fails loudly with a 500 pointing at this
+(checked via `sheet.headerValues.includes(...)` up front). If you add any
+other new writable/internal column in the future, add it to the sheet's
+header row manually first — nothing here creates columns on the fly.

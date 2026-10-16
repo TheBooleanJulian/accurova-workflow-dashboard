@@ -56,7 +56,14 @@ const WRITABLE_COLUMNS = {
   "Tags":             "tags",
 };
 
-const ALL_COLUMNS = { ...READONLY_COLUMNS, ...WRITABLE_COLUMNS };
+// Not writable via PATCH /projects/:id — only set through POST /projects/link,
+// which generates/reuses one token per Client and propagates it to every row
+// with that client name, so one link covers all of a client's shoots.
+const INTERNAL_COLUMNS = {
+  "Client Token": "client_token",
+};
+
+const ALL_COLUMNS = { ...READONLY_COLUMNS, ...WRITABLE_COLUMNS, ...INTERNAL_COLUMNS };
 
 // Fields shown on the public, unauthenticated dashboard — progress only, no
 // internal triage detail. Deliberately excludes remarks, tags, priority and
@@ -149,12 +156,21 @@ function requireAdminToken(req, res, next) {
 app.use("/projects", requireAdminToken);
 
 // ── PUBLIC DASHBOARD ────────────────────────────────────────────────────────────
-// No auth — read-only, progress fields only. Meant for the public-facing page.
+// No password, but NOT a blanket listing — a per-client token (?token=) is
+// required and scopes the response to only that client's shoots. Without a
+// valid token this returns nothing; it never falls back to "show everyone".
 app.get("/public/projects", async (req, res) => {
   try {
+    const token = String(req.query.token || "");
+    if (!token) return res.status(400).json({ error: "Missing access token" });
+
     const sheet = await getSheet();
     const rows = await sheet.getRows();
-    const projects = rows.map(rowToProject).map(toPublicProject);
+    const projects = rows
+      .map(rowToProject)
+      .filter((p) => p.client_token && p.client_token === token)
+      .map(toPublicProject);
+
     res.json(projects);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -220,6 +236,46 @@ app.patch("/projects/:id", async (req, res) => {
     await row.save();
 
     res.json(rowToProject(row));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /projects/link — generate (or reuse) a private-link token for a
+// client and write it to every row with that client name, so one link
+// covers all of their shoots, past and future. Body: { client: "..." }.
+app.post("/projects/link", async (req, res) => {
+  try {
+    const client = String(req.body.client || "").trim();
+    if (!client) return res.status(400).json({ error: "client is required" });
+
+    const sheet = await getSheet();
+    const rows = await sheet.getRows();
+    // row.set() silently no-ops on a header that doesn't exist in the sheet
+    // (no error, nothing written) — check up front so a missing column fails
+    // loudly here instead of quietly producing a token that's never actually
+    // persisted, which would make /public/projects reject it forever.
+    if (!sheet.headerValues.includes("Client Token")) {
+      return res.status(500).json({ error: "Sheet is missing the 'Client Token' column — add it to the header row first (see README §1)" });
+    }
+    const matching = rows.filter(
+      (r) => String(r.get("Client") || "").trim().toLowerCase() === client.toLowerCase()
+    );
+    if (matching.length === 0) {
+      return res.status(404).json({ error: "No shoots found for that client" });
+    }
+
+    const existingToken = matching.map((r) => r.get("Client Token")).find(Boolean);
+    const token = existingToken || crypto.randomBytes(16).toString("hex");
+
+    for (const row of matching) {
+      if (row.get("Client Token") !== token) {
+        row.set("Client Token", token);
+        await row.save();
+      }
+    }
+
+    res.json({ token, client, shootCount: matching.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

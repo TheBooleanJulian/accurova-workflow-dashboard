@@ -38,8 +38,8 @@ function adminReq(path, opts = {}) {
 }
 
 export const api = {
-  // Public, unauthenticated dashboard
-  listPublicProjects: () => req("/public/projects"),
+  // Public — per-client private link, not a blanket listing. No token, no data.
+  listPublicProjects: (token) => req(`/public/projects?token=${encodeURIComponent(token || "")}`),
 
   // Admin — requires a valid session token
   login: (password) => req("/admin/login", { method: "POST", body: JSON.stringify({ password }) }),
@@ -53,4 +53,7 @@ export const api = {
 
   getProject:    (id)       => adminReq(`/projects/${id}`),
   updateProject: (id, body) => adminReq(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  // Generates (or reuses) a client's private-link token and returns it.
+  getClientLink: (client) => adminReq("/projects/link", { method: "POST", body: JSON.stringify({ client }) }),
 };
