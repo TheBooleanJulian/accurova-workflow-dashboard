@@ -15,12 +15,16 @@ export const auth = {
 };
 
 async function req(path, opts = {}) {
+  // Spread order matters: opts must come first so the merged `headers` below
+  // (not opts.headers alone) wins — otherwise opts.headers (e.g. just
+  // x-admin-token) silently clobbers Content-Type, and the backend's JSON
+  // body parser skips the body entirely since it never matches that type.
   const res = await fetch(`${BASE}${path}`, {
+    ...opts,
     headers: {
       "Content-Type": "application/json",
       ...opts.headers,
     },
-    ...opts,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
