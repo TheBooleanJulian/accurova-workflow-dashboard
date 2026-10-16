@@ -1,11 +1,15 @@
 # .github/workflows/deploy.yml
-# Accurova Workflow Dashboard — CI/CD
+# Accurova Workflow Dashboard — CI
 #
 # Branches:
 #   dev  → runs tests only
-#   main → tests + auto-deploy to Zeabur via webhook
+#   main → tests only — Zeabur's own GitHub integration auto-deploys both
+#          services on every push to main (Git-connected services redeploy
+#          on push natively; there's no separate "deploy hook" webhook
+#          setting in Zeabur to trigger here). This workflow is a quality
+#          gate, not the deploy trigger.
 
-name: CI / Deploy
+name: CI
 
 on:
   push:
@@ -76,24 +80,3 @@ jobs:
           name: frontend-dist
           path: frontend/dist/
           retention-days: 1
-
-  # ── 3. DEPLOY (main branch only) ─────────────────────────────────────────
-  deploy:
-    name: Deploy to Zeabur
-    needs: [test-backend, build-frontend]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Trigger Zeabur deploy — Backend
-        run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.ZEABUR_DEPLOY_HOOK_BACKEND }}"
-
-      - name: Trigger Zeabur deploy — Frontend
-        run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.ZEABUR_DEPLOY_HOOK_FRONTEND }}"
-
-      - name: Confirm deploy triggered
-        run: echo "Zeabur deploy hooks fired. Check Zeabur dashboard for status."

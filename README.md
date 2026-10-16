@@ -156,8 +156,8 @@ Go to **Settings → Secrets → Actions** and add:
 | Secret | Value |
 |--------|-------|
 | `VITE_API_URL` | `https://accurova-workflow-api.zeabur.app` |
-| `ZEABUR_DEPLOY_HOOK_BACKEND` | Zeabur deploy webhook URL (see step 4) |
-| `ZEABUR_DEPLOY_HOOK_FRONTEND` | Zeabur deploy webhook URL (see step 4) |
+
+No deploy-trigger secrets needed — Zeabur's Git-connected services auto-deploy on every push to `main` on their own; there's no separate webhook to configure. This workflow is a test/build gate, not what triggers the deploy.
 
 Backend tests don't touch the real sheet — validation runs before any Google Sheets API call — so no Google credentials are needed in CI.
 
@@ -172,7 +172,7 @@ Backend tests don't touch the real sheet — validation runs before any Google S
 > **Already have a project with only one service?** This happens if the repo was connected without Zeabur picking up `zeabur.yaml`'s two-service split — you'll see a single service (often named after the repo) that 404s on every route. Fix it without starting over:
 > 1. Open that service → **Settings**. If it already owns the `workflow.accurova.com` domain, repurpose it as the **frontend**: Root Directory `frontend`, Build Command `npm ci && npm run build`, Output Directory `dist`.
 > 2. Left sidebar → **Add Service** → same GitHub repo → this becomes the **backend**: Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`. Name it `accurova-workflow-api` (or note whatever URL Zeabur assigns it).
-> 3. Continue with step 4 below for env vars, then step 5 for deploy hooks.
+> 3. Continue with step 4 below for env vars — no deploy-hook step needed, Zeabur redeploys on push automatically.
 4. For each service, add environment variables in the Zeabur dashboard:
 
    **Backend** (`accurova-workflow-api`):
@@ -190,9 +190,7 @@ Backend tests don't touch the real sheet — validation runs before any Google S
    VITE_API_URL = https://accurova-workflow-api.zeabur.app
    ```
 
-5. In each service → **Settings → Deploy Hooks**, create a hook and copy the URL into the GitHub Secrets above.
-
-6. **Custom domain** — the frontend is served at `https://workflow.accurova.com`, not the default `*.zeabur.app` domain:
+5. **Custom domain** — the frontend is served at `https://workflow.accurova.com`, not the default `*.zeabur.app` domain:
    - In the `accurova-workflow-app` service → **Settings → Domains** → **Add Domain** → enter `workflow.accurova.com`.
    - Zeabur will give you a CNAME target — add a `CNAME` record for `workflow` pointing to it in your DNS provider for `accurova.com`.
    - Once DNS resolves, Zeabur issues the TLS cert automatically.
@@ -211,10 +209,13 @@ git push origin dev     →  Tests run (backend + frontend build)
                               ↓ pass
 git checkout main
 git merge dev
-git push origin main    →  Tests run → Zeabur deploy hooks fire → live in ~60s
+git push origin main    →  Tests run (quality gate) ‖ Zeabur auto-deploys both
+                            services in parallel on the same push — live in ~60s
 ```
 
-Or just open a PR from `dev` → `main` and merge it — Actions handles the rest.
+The GitHub Actions workflow and Zeabur's deploy are two independent reactions to the same `git push`, not a pipeline where one triggers the other — Zeabur's own GitHub integration redeploys Git-connected services on every push regardless of whether CI passes. Actions is here to catch regressions, not to gate the deploy.
+
+Or just open a PR from `dev` → `main` and merge it.
 
 ---
 
@@ -292,6 +293,7 @@ Versioning follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATC
 
 ### [Unreleased]
 
+- Removed the GitHub Actions "Deploy to Zeabur" job and its `ZEABUR_DEPLOY_HOOK_*` secrets — that's not a real Zeabur feature (no such webhook setting exists in the dashboard), which is why it had been failing silently on every `main` push. Zeabur's Git-connected services already auto-deploy on push on their own; Actions is now test/build-only.
 - **Breaking:** switched the backend's Google auth from a service-account key to OAuth (`GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`/`GOOGLE_OAUTH_REFRESH_TOKEN`, replacing `GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_SERVICE_ACCOUNT_KEY`) — service-account key creation is blocked under Google Workspace orgs with `iam.disableServiceAccountKeyCreation` enforced. See §1 and `scripts/get-oauth-refresh-token.js`.
 - **Breaking:** replaced the shared `API_KEY`/`VITE_API_KEY` build-time secret with a split public/admin model — `GET /public/projects` is now unauthenticated (progress fields only), and `/projects` is gated by a session token from `POST /admin/login` (shared `ADMIN_PASSWORD`) instead. See [Security](#security).
 - Added a separate public, read-only dashboard (`/`) alongside the existing editing dashboard, now moved to `/#admin` behind the password login.
