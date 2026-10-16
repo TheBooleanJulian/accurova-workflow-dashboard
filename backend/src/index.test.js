@@ -1,4 +1,4 @@
-process.env.API_KEY ??= "test-key";
+process.env.ADMIN_PASSWORD ??= "test-password";
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -8,15 +8,20 @@ import { app } from "./index.js";
 const PORT = 3099;
 const BASE = `http://localhost:${PORT}`;
 let server;
+let adminToken;
 
-before(() => new Promise((resolve) => { server = app.listen(PORT, resolve); }));
+before(async () => {
+  await new Promise((resolve) => { server = app.listen(PORT, resolve); });
+  const { body } = await req("POST", "/admin/login", { password: process.env.ADMIN_PASSWORD });
+  adminToken = body.token;
+});
 after(()  => new Promise((resolve) => { server.close(resolve); }));
 
 function req(method, path, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const r = http.request(
       { hostname: "localhost", port: PORT, path, method,
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.API_KEY, ...headers } },
+        headers: { "Content-Type": "application/json", "x-admin-token": adminToken || "", ...headers } },
       (res) => {
         let raw = "";
         res.on("data", (c) => { raw += c; });
@@ -36,10 +41,27 @@ test("GET /health returns 200 with status ok", async () => {
   assert.ok(typeof body.ts === "string", "ts should be a string");
 });
 
-test("GET /projects without an API key returns 401", async () => {
-  const { status, body } = await req("GET", "/projects", undefined, { "x-api-key": "" });
+test("POST /admin/login with the wrong password returns 401", async () => {
+  const { status, body } = await req("POST", "/admin/login", { password: "nope" });
+  assert.equal(status, 401);
+  assert.equal(body.error, "Incorrect password");
+});
+
+test("POST /admin/login with the right password returns a token", async () => {
+  const { status, body } = await req("POST", "/admin/login", { password: process.env.ADMIN_PASSWORD });
+  assert.equal(status, 200);
+  assert.ok(typeof body.token === "string" && body.token.length > 0);
+});
+
+test("GET /projects without an admin token returns 401", async () => {
+  const { status, body } = await req("GET", "/projects", undefined, { "x-admin-token": "" });
   assert.equal(status, 401);
   assert.equal(body.error, "Unauthorized");
+});
+
+test("GET /public/projects requires no auth", async () => {
+  const { status } = await req("GET", "/public/projects", undefined, { "x-admin-token": "" });
+  assert.notEqual(status, 401);
 });
 
 test("PATCH /projects/:id with no valid fields returns 400", async () => {

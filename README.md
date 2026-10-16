@@ -16,13 +16,14 @@
 
 ## What it does
 
-A PC-side script scans shoot folders and writes RAW/processed counts into a Google Sheet; this dashboard reads that sheet and lets you layer status, client, priority and remarks on top. Stack: **React + Vite** → **Express API** → **Google Sheets** · Deployed on **Zeabur** · CI/CD via **GitHub Actions**.
+A PC-side script scans shoot folders and writes RAW/processed counts into a Google Sheet; this dashboard reads that sheet and lets you layer status, client, priority and remarks on top. One frontend serves two views: a public, read-only progress page for clients, and a password-gated admin dashboard for editing. Stack: **React + Vite** → **Express API** → **Google Sheets** · Deployed on **Zeabur** · CI/CD via **GitHub Actions**.
 
 ## Features
 
 - Reads and augments a Google Sheet populated by an external folder-scan script — no separate database
-- Dashboard can edit `Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`, while leaving scan-script-owned columns untouched
-- Shared API-key auth (`x-api-key`) on every `/projects` route, meant to sit behind a real access layer (e.g. Cloudflare Access) in front of the public URL
+- **Public dashboard** (`/`) — unauthenticated, read-only shoot progress (name, date, client, type, status, ratio) for clients. No remarks/tags/priority/exact counts exposed.
+- **Admin dashboard** (`/#admin`) — full edit capabilities (`Workflow Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`), gated by a single shared password; leaves scan-script-owned columns (including its own `Status`) untouched
+- Admin login issues a signed, self-expiring session token (no server-side session store) instead of a baked-in build-time secret
 - Filterable project list (`?status=`, `?priority=`, `?type=`) and single-shoot lookup/update endpoints
 - Two-service Zeabur deployment (frontend + backend) driven by `zeabur.yaml`, with GitHub Actions CI/CD (test on `dev`, deploy on `main`)
 - Custom domain (`workflow.accurova.com`) served through Cloudflare in front of Zeabur
@@ -37,8 +38,11 @@ _Screenshots coming soon._
 accurova-workflow/
 ├── frontend/          # React + Vite SPA
 │   ├── src/
-│   │   ├── App.jsx    # Dashboard UI
-│   │   ├── api.js     # Backend API client
+│   │   ├── App.jsx      # Hash router: "#admin" → AdminApp, else → PublicApp
+│   │   ├── PublicApp.jsx # Unauthenticated read-only progress view
+│   │   ├── AdminApp.jsx  # Password-gated login + full editing dashboard
+│   │   ├── shared.jsx    # UI pieces shared by both views
+│   │   ├── api.js        # Backend API client
 │   │   └── main.jsx
 │   ├── index.html
 │   ├── vite.config.js
@@ -46,6 +50,8 @@ accurova-workflow/
 ├── backend/           # Express REST API
 │   ├── src/
 │   │   └── index.js
+│   ├── scripts/
+│   │   └── get-oauth-refresh-token.js # one-time local helper, never deployed
 │   └── .env.example
 ├── .github/
 │   └── workflows/
@@ -61,31 +67,45 @@ The sheet is populated by your folder-scan script with these columns (first tab)
 
 `Photoshoot Name`, `Date`, `Root Folder`, `Full Path`, `RAW Count`, `Processed Count`, `Ratio %`, `Status`, `Last Scanned`, `Status Icon`, `Remarks`
 
-Add four more columns for the dashboard to manage manually — they're not written by the scan script:
+Add five more columns for the dashboard to manage manually — they're not written by the scan script:
 
-`Client`, `Type`, `Priority`, `Tags`
+`Workflow Status`, `Client`, `Type`, `Priority`, `Tags`
 
-The backend needs its own Google Cloud service account to read/write the sheet:
+`Workflow Status` is deliberately not named `Status` — that header is the scan script's own computed processing state (`Fully Processed` / `Partially Processed` / `Unprocessed`), rewritten on every scan. Reusing that name for the dashboard's human-set status would mean the next scan silently overwrites whatever stage was set on the dashboard.
+
+### Google account setup
+
+The backend authenticates as a real Google account via OAuth, not a service-account key — many Google Workspace orgs now block service-account key creation (`iam.disableServiceAccountKeyCreation`), the same policy the [PhotoVault Tracker](../accurova-photovault-tracker) already works around this way. If you've already set up the tracker's OAuth client, reuse it here instead of creating a new one.
 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create (or reuse) a project → enable the **Google Sheets API**.
-2. **IAM & Admin → Service Accounts** → **Create Service Account**. No roles needed at the project level.
-3. Open the service account → **Keys** → **Add Key** → **Create new key** → JSON. Download it.
-4. From the JSON, note `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL`, and `private_key` → `GOOGLE_SERVICE_ACCOUNT_KEY`.
-5. Open the actual Google Sheet → **Share** → paste the service account's `client_email` → give it **Editor** access.
-6. The sheet ID is the long string in its URL: `https://docs.google.com/spreadsheets/d/`**`SHEET_ID`**`/edit` → `GOOGLE_SHEET_ID`.
+2. **APIs & Services → OAuth consent screen** → choose **External** (or **Internal** on a Workspace org) → fill in the required fields → add yourself as a **Test user** if prompted.
+3. **APIs & Services → Credentials → Create Credentials → OAuth client ID** → Application type: **Desktop app**.
+4. Note the **Client ID** and **Client secret** → `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`.
+5. Open the actual Google Sheet → **Share** → give the Google *account* you'll sign in with in the next step **Editor** access (not a service-account email this time — a real account you control).
+6. In `backend/`, put `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` in `.env`, then run:
+   ```bash
+   node scripts/get-oauth-refresh-token.js
+   ```
+   Open the printed URL, sign in with the account from step 5, and it prints `GOOGLE_OAUTH_REFRESH_TOKEN` — copy that into `.env` (local) and the backend's Zeabur env vars (production). This is a one-time step run locally; it never runs on Zeabur.
+7. The sheet ID is the long string in its URL: `https://docs.google.com/spreadsheets/d/`**`SHEET_ID`**`/edit` → `GOOGLE_SHEET_ID`.
 
-The dashboard can edit `Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`. It never touches `Photoshoot Name`, `Date`, `Root Folder`, `Full Path`, `RAW Count`, `Processed Count`, `Ratio %`, `Last Scanned` or `Status Icon` — those stay owned by your scan script so the two never fight over the same cells. There's no create/delete from the dashboard either; rows come from real folders your script finds.
+The dashboard can edit `Workflow Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`. It never touches `Photoshoot Name`, `Date`, `Root Folder`, `Full Path`, `RAW Count`, `Processed Count`, `Ratio %`, `Status`, `Last Scanned` or `Status Icon` — those stay owned by your scan script so the two never fight over the same cells. There's no create/delete from the dashboard either; rows come from real folders your script finds.
 
 ---
 
 ## Security
 
-The backend is a public URL that can read and rewrite rows in your Google Sheet, so it's gated two ways:
+The backend serves two tiers from the same public URL:
 
-1. **Shared API key** — every `/projects` request needs an `x-api-key` header matching the backend's `API_KEY` env var. The frontend sends it automatically from `VITE_API_KEY`, baked in at build time. This stops casual/automated hits but is **not a real secret** once shipped — anyone who opens devtools on the deployed site can read it out of the bundle.
-2. **Access control in front of the site** (the actual gate) — put `workflow.accurova.com` behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) (Zero Trust → Access → Applications), restricted to your and your team's email addresses. Free for small teams, and it blocks the request before it ever reaches Zeabur. Do this before pointing real client data at the deployed URL.
+- `GET /public/projects` — no auth. Deliberately read-only and stripped to progress fields only (see `PUBLIC_FIELDS` in `backend/src/index.js`) — safe to leave open to anyone with the link, by design (this project intentionally shows every shoot to anyone, not per-client-scoped links).
+- `/projects` (list/get/patch) — gated by a session token obtained from `POST /admin/login`:
+  1. The admin frontend (`/#admin`) posts the shared `ADMIN_PASSWORD` once.
+  2. The backend compares it with a timing-safe check and, on success, returns a token signed with HMAC-SHA256 (keyed by `ADMIN_PASSWORD`) that embeds its own expiry (12h) — no server-side session store, so it survives restarts and works across multiple instances.
+  3. The frontend stores that token in `localStorage` and sends it as `x-admin-token` on every `/projects` request; a `401` clears it and bounces back to the login form.
 
-Generate a strong key with `openssl rand -hex 32` and set it as `API_KEY` (backend) and the matching `VITE_API_KEY` (frontend) — see §4 for where in Zeabur, and add `VITE_API_KEY` to the GitHub Secrets in §3 so CI bakes it into the build.
+This is still a **shared password**, not per-user accounts — good enough to keep casual visitors out of the edit surface, not a substitute for real access control if the data is sensitive. For that, put `workflow.accurova.com` (or at least the `/#admin` path) behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) (Zero Trust → Access → Applications) as well, restricted to your team's email addresses — it blocks the request before it ever reaches Zeabur.
+
+Generate a strong password with `openssl rand -hex 16` and set it as `ADMIN_PASSWORD` in the backend's Zeabur env (see §4) and in CI (§3, for the test suite's login test — any value works there, it just needs to be set).
 
 ---
 
@@ -95,7 +115,7 @@ Generate a strong key with `openssl rand -hex 32` and set it as `API_KEY` (backe
 
 ```bash
 cd backend
-cp .env.example .env          # fill in GOOGLE_SERVICE_ACCOUNT_EMAIL/KEY + GOOGLE_SHEET_ID
+cp .env.example .env          # fill in GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN + GOOGLE_SHEET_ID + ADMIN_PASSWORD
 npm install
 npm run dev                   # http://localhost:3001
 ```
@@ -136,7 +156,6 @@ Go to **Settings → Secrets → Actions** and add:
 | Secret | Value |
 |--------|-------|
 | `VITE_API_URL` | `https://accurova-workflow-api.zeabur.app` |
-| `VITE_API_KEY` | Same value as the backend's `API_KEY` (see Security above) |
 | `ZEABUR_DEPLOY_HOOK_BACKEND` | Zeabur deploy webhook URL (see step 4) |
 | `ZEABUR_DEPLOY_HOOK_FRONTEND` | Zeabur deploy webhook URL (see step 4) |
 
@@ -158,17 +177,17 @@ Backend tests don't touch the real sheet — validation runs before any Google S
 
    **Backend** (`accurova-workflow-api`):
    ```
-   GOOGLE_SERVICE_ACCOUNT_EMAIL = xxxx@xxxx.iam.gserviceaccount.com
-   GOOGLE_SERVICE_ACCOUNT_KEY   = -----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n
+   GOOGLE_OAUTH_CLIENT_ID       = xxxx.apps.googleusercontent.com
+   GOOGLE_OAUTH_CLIENT_SECRET   = xxxx
+   GOOGLE_OAUTH_REFRESH_TOKEN   = (from: node scripts/get-oauth-refresh-token.js — see §1)
    GOOGLE_SHEET_ID              = 1ucQvqmJji7kvbrUJTCRZFZibomG5belAWQrQutu4VFQ
    FRONTEND_URL                 = https://workflow.accurova.com
-   API_KEY                      = (generate with: openssl rand -hex 32)
+   ADMIN_PASSWORD               = (generate with: openssl rand -hex 16)
    ```
 
    **Frontend** (`accurova-workflow-app`):
    ```
    VITE_API_URL = https://accurova-workflow-api.zeabur.app
-   VITE_API_KEY = (same value as the backend's API_KEY)
    ```
 
 5. In each service → **Settings → Deploy Hooks**, create a hook and copy the URL into the GitHub Secrets above.
@@ -203,12 +222,16 @@ Or just open a PR from `dev` → `main` and merge it — Actions handles the res
 
 Rows are identified by their sheet row number (`id`). There's no create/delete endpoint — rows come from your scan script.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/projects` | List all shoots (`?status=Editing&priority=High&type=Photo`) |
-| GET | `/projects/:id` | Single shoot |
-| PATCH | `/projects/:id` | Update `status`, `remarks`, `client`, `type`, `priority`, or `tags` |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/health` | none | Health check |
+| GET | `/public/projects` | none | List all shoots, progress fields only (`id`, `name`, `date`, `client`, `type`, `status`, `ratio`, `status_icon`) |
+| POST | `/admin/login` | — | `{ "password": "..." }` → `{ "token", "expiresAt" }` on success, `401` otherwise |
+| GET | `/projects` | `x-admin-token` | List all shoots, full fields (`?status=Editing&priority=High&type=Photo`) |
+| GET | `/projects/:id` | `x-admin-token` | Single shoot, full fields |
+| PATCH | `/projects/:id` | `x-admin-token` | Update `status`, `remarks`, `client`, `type`, `priority`, or `tags` |
+
+`x-admin-token` is the token returned by `/admin/login`; it's self-expiring (12h) and signed with `ADMIN_PASSWORD`, so the backend needs no session store to validate it.
 
 A project object looks like:
 
@@ -269,7 +292,10 @@ Versioning follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATC
 
 ### [Unreleased]
 
-- Added shared-secret `API_KEY`/`VITE_API_KEY` auth on every `/projects` route (fails closed if unset). See [Security](#security).
+- **Breaking:** switched the backend's Google auth from a service-account key to OAuth (`GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`/`GOOGLE_OAUTH_REFRESH_TOKEN`, replacing `GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_SERVICE_ACCOUNT_KEY`) — service-account key creation is blocked under Google Workspace orgs with `iam.disableServiceAccountKeyCreation` enforced. See §1 and `scripts/get-oauth-refresh-token.js`.
+- **Breaking:** replaced the shared `API_KEY`/`VITE_API_KEY` build-time secret with a split public/admin model — `GET /public/projects` is now unauthenticated (progress fields only), and `/projects` is gated by a session token from `POST /admin/login` (shared `ADMIN_PASSWORD`) instead. See [Security](#security).
+- Added a separate public, read-only dashboard (`/`) alongside the existing editing dashboard, now moved to `/#admin` behind the password login.
+- Renamed the dashboard's editable `Status` column to `Workflow Status` to stop colliding with the PhotoVault Tracker's own computed `Status` column when both apps share a sheet.
 
 ### [2.0.0] — 2026-08-02
 
