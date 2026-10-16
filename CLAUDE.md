@@ -1,5 +1,19 @@
 # Accurova Workflow Dashboard — project-specific
 
+## There is no `zeabur.yaml` config for this monorepo
+A previous `zeabur.yaml` at the repo root claimed Zeabur would read it and
+auto-create both services with the right Root Directory/Build/Start
+Command. That was never true — the file didn't match any real Zeabur
+schema (not the Template marketplace format it superficially resembled,
+which requires prebuilt Docker images anyway, not Git services; not a
+documented monorepo-config format either). Removed. Both services
+(`backend`, `frontend`) have to be added manually through the Zeabur
+dashboard — see README §4. If a service's config screen shows
+ENTRYPOINT/CMD (Startup Command/Arguments) instead of Root
+Directory/Build Command/Start Command, it was created as a Prebuilt Image
+deployment by mistake — delete and re-add it as Git instead; a Docker
+image has no source code in it for `npm ci`/`npm start` to act on.
+
 ## Zeabur has no "Deploy Hook" webhook feature
 Don't go looking for one, and don't re-add a GitHub Actions step that posts
 to one. Confirmed against Zeabur's own docs: Git-connected services

@@ -25,7 +25,7 @@ A PC-side script scans shoot folders and writes RAW/processed counts into a Goog
 - **Admin dashboard** (`/#admin`) — full edit capabilities (`Workflow Status`, `Remarks`, `Client`, `Type`, `Priority`, `Tags`), gated by a single shared password; leaves scan-script-owned columns (including its own `Status`) untouched
 - Admin login issues a signed, self-expiring session token (no server-side session store) instead of a baked-in build-time secret
 - Filterable project list (`?status=`, `?priority=`, `?type=`) and single-shoot lookup/update endpoints
-- Two-service Zeabur deployment (frontend + backend) driven by `zeabur.yaml`, with GitHub Actions CI/CD (test on `dev`, deploy on `main`)
+- Two-service Zeabur deployment (frontend + backend, each added manually as a Git-connected service — see §4), with GitHub Actions CI (test on `dev` and `main`; Zeabur deploys on push independently of CI)
 - Custom domain (`workflow.accurova.com`) served through Cloudflare in front of Zeabur
 
 ## Screenshots
@@ -55,8 +55,7 @@ accurova-workflow/
 │   └── .env.example
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml # CI/CD: test on dev, deploy on main
-└── zeabur.yaml        # Zeabur monorepo config
+│       └── deploy.yml # CI: tests + frontend build on every push to dev/main
 ```
 
 ---
@@ -165,14 +164,14 @@ Backend tests don't touch the real sheet — validation runs before any Google S
 
 ## 4 · Zeabur setup
 
-1. Go to [zeabur.com](https://zeabur.com) → **New Project**.
-2. Choose **Deploy from GitHub** → select `accurova-workflow`.
-3. Zeabur reads `zeabur.yaml` and creates two services automatically.
+This is a monorepo with two independent apps in it — Zeabur does not auto-split a repo into multiple services from a config file; **each service has to be added manually**, once per app.
 
-> **Already have a project with only one service?** This happens if the repo was connected without Zeabur picking up `zeabur.yaml`'s two-service split — you'll see a single service (often named after the repo) that 404s on every route. Fix it without starting over:
-> 1. Open that service → **Settings**. If it already owns the `workflow.accurova.com` domain, repurpose it as the **frontend**: Root Directory `frontend`, Build Command `npm ci && npm run build`, Output Directory `dist`.
-> 2. Left sidebar → **Add Service** → same GitHub repo → this becomes the **backend**: Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`. Name it `accurova-workflow-api` (or note whatever URL Zeabur assigns it).
-> 3. Continue with step 4 below for env vars — no deploy-hook step needed, Zeabur redeploys on push automatically.
+1. Go to [zeabur.com](https://zeabur.com) → **New Project**.
+2. **Add Service** → **Git** (deploy from your GitHub repo, not Docker Image/Prebuilt) → select `accurova-workflow-dashboard`. This becomes the **backend**: Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`. Name it `accurova-workflow-api` (or note whatever URL Zeabur assigns it).
+3. **Add Service** again, same repo, same way. This becomes the **frontend**: Root Directory `frontend`, Build Command `npm ci && npm run build`, Output Directory `dist`. Name it `accurova-workflow-app`.
+
+   If either service's config screen shows **ENTRYPOINT/CMD** (Startup Command/Arguments) instead of Root Directory/Build Command/Start Command, it was created as a **Prebuilt Image** deployment by mistake, not a Git one — delete it and re-add it, making sure you pick the Git/GitHub option, not an image.
+
 4. For each service, add environment variables in the Zeabur dashboard:
 
    **Backend** (`accurova-workflow-api`):
@@ -293,6 +292,7 @@ Versioning follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATC
 
 ### [Unreleased]
 
+- Removed `zeabur.yaml` — it never matched Zeabur's real schema for anything (not the Template marketplace format, which it superficially resembled and which requires prebuilt Docker images rather than Git-connected services; not a documented monorepo-config format either), and never actually auto-split this repo into two services the way earlier docs claimed. §4 now documents adding both services manually through the dashboard instead.
 - Removed the GitHub Actions "Deploy to Zeabur" job and its `ZEABUR_DEPLOY_HOOK_*` secrets — that's not a real Zeabur feature (no such webhook setting exists in the dashboard), which is why it had been failing silently on every `main` push. Zeabur's Git-connected services already auto-deploy on push on their own; Actions is now test/build-only.
 - **Breaking:** switched the backend's Google auth from a service-account key to OAuth (`GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`/`GOOGLE_OAUTH_REFRESH_TOKEN`, replacing `GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_SERVICE_ACCOUNT_KEY`) — service-account key creation is blocked under Google Workspace orgs with `iam.disableServiceAccountKeyCreation` enforced. See §1 and `scripts/get-oauth-refresh-token.js`.
 - **Breaking:** replaced the shared `API_KEY`/`VITE_API_KEY` build-time secret with a split public/admin model — `GET /public/projects` is now unauthenticated (progress fields only), and `/projects` is gated by a session token from `POST /admin/login` (shared `ADMIN_PASSWORD`) instead. See [Security](#security).
