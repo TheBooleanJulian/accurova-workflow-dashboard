@@ -1,0 +1,21 @@
+{
+  // Accurova Workflow Dashboard on Cloudflare Workers: worker/ (the Express API ported to the Sheets REST API) +
+  // frontend/dist as static assets on one origin. The frontend is built WITHOUT VITE_API_URL, so it calls /api/*.
+  // Secrets (npx wrangler secret put …): GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET,
+  // GOOGLE_OAUTH_REFRESH_TOKEN, GOOGLE_SHEET_ID, ADMIN_PASSWORD — the same values as the Zeabur backend.
+  "name": "accurova-workflow-dashboard",
+  "account_id": "c580c4403524273d1bece674117472dd",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "build": { "command": "npm ci --prefix frontend && npm run build --prefix frontend" },
+  "assets": {
+    "directory": "./frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/healthz"]
+  },
+  // Cutover: uncomment once the secrets are set (overrides the *.accurova.com wildcard; remove to roll back).
+  // "routes": [{ "pattern": "workflow.accurova.com", "custom_domain": true }],
+  "observability": { "enabled": true }
+}
