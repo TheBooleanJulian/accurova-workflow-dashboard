@@ -47,6 +47,25 @@ jobs:
           PORT: 3001
           ADMIN_PASSWORD: test-password
 
+  # ── 1b. WORKER TESTS (production API on Cloudflare Workers, no deps) ──────
+  test-worker:
+    name: Worker Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run tests
+        run: node --test
+
   # ── 2. FRONTEND LINT / BUILD ──────────────────────────────────────────────
   build-frontend:
     name: Frontend Build
