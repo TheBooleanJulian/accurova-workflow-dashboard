@@ -168,57 +168,43 @@ Backend tests don't touch the real sheet — validation runs before any Google S
 
 ---
 
-## 4 · Zeabur setup
+## 4 · Cloudflare Workers setup
 
-This is a monorepo with two independent apps in it — Zeabur does not auto-split a repo into multiple services from a config file; **each service has to be added manually**, once per app.
+Production is one Cloudflare Worker (`wrangler.jsonc`) serving both the built frontend and the API on
+`https://workflow.accurova.com`. The API lives in `worker/index.js`: the same routes as `backend/src/index.js`, ported
+from `google-spreadsheet` to the Sheets REST API (no npm dependencies). The frontend is built **without**
+`VITE_API_URL`, so it calls `/api/*` on its own origin and the Worker strips `/api`, like the Vite dev proxy does.
+`backend/` stays as the local-dev server.
 
-1. Go to [zeabur.com](https://zeabur.com) → **New Project**.
-2. **Add Service** → **Git** (deploy from your GitHub repo, not Docker Image/Prebuilt) → select `accurova-workflow-dashboard`. This becomes the **backend**: Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`. Name it `accurova-workflow-api` (or note whatever URL Zeabur assigns it).
-3. **Add Service** again, same repo, same way. This becomes the **frontend**: Root Directory `frontend`, Build Command `npm ci && npm run build`, Output Directory `dist`. Name it `accurova-workflow-app`.
-
-   If either service's config screen shows **ENTRYPOINT/CMD** (Startup Command/Arguments) instead of Root Directory/Build Command/Start Command, it was created as a **Prebuilt Image** deployment by mistake, not a Git one — delete it and re-add it, making sure you pick the Git/GitHub option, not an image.
-
-4. For each service, add environment variables in the Zeabur dashboard:
-
-   **Backend** (`accurova-workflow-api`):
+1. Secrets, once (same values the Zeabur backend had):
    ```
-   GOOGLE_OAUTH_CLIENT_ID       = xxxx.apps.googleusercontent.com
-   GOOGLE_OAUTH_CLIENT_SECRET   = xxxx
-   GOOGLE_OAUTH_REFRESH_TOKEN   = (from: node scripts/get-oauth-refresh-token.js — see §1)
-   GOOGLE_SHEET_ID              = 1ucQvqmJji7kvbrUJTCRZFZibomG5belAWQrQutu4VFQ
-   FRONTEND_URL                 = https://workflow.accurova.com
-   ADMIN_PASSWORD               = (generate with: openssl rand -hex 16)
+   npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID
+   npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET
+   npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN   # from: node backend/scripts/get-oauth-refresh-token.js — see §1
+   npx wrangler secret put GOOGLE_SHEET_ID
+   npx wrangler secret put ADMIN_PASSWORD
    ```
+2. `npx wrangler deploy` builds the frontend (`build.command`) and deploys. The `workflow.accurova.com` custom domain is
+   the `routes` entry in `wrangler.jsonc`.
+3. Worker tests: `cd worker && node --test` (also run in CI).
 
-   **Frontend** (`accurova-workflow-app`):
-   ```
-   VITE_API_URL = https://accurova-workflow-api.zeabur.app
-   ```
-
-5. **Custom domain** — the frontend is served at `https://workflow.accurova.com`, not the default `*.zeabur.app` domain:
-   - In the `accurova-workflow-app` service → **Settings → Domains** → **Add Domain** → enter `workflow.accurova.com`.
-   - Zeabur will give you a CNAME target — add a `CNAME` record for `workflow` pointing to it in your DNS provider for `accurova.com`.
-   - Once DNS resolves, Zeabur issues the TLS cert automatically.
-   - Keep `VITE_API_URL` and the CI secret `VITE_API_URL` pointed at the backend's URL (`accurova-workflow-api.zeabur.app`, or its own custom domain if you set one) — that's unrelated to the frontend's domain.
-
-   `accurova.com`'s DNS is proxied through **Cloudflare**, which needs two adjustments since Cloudflare terminates TLS in front of Zeabur:
-   - **SSL/TLS mode** — set to **Full (strict)** (or **Full**) in Cloudflare → SSL/TLS. Leaving it on **Flexible** causes a redirect loop against Zeabur's HTTPS redirect.
-   - **Cert issuance** — Zeabur validates the domain via an HTTP challenge, which can fail while the record is proxied (orange cloud). If verification stalls, temporarily switch the `workflow` CNAME to **DNS only** (grey cloud) in Cloudflare, wait for Zeabur to confirm the domain/cert, then switch it back to **Proxied** (orange cloud).
+Admin tokens are signed exactly as before, so a token issued by the old backend keeps working. One improvement over
+`google-spreadsheet`: edits write only the changed cells, not the whole row.
 
 ---
 
 ## 5 · CI/CD flow
 
 ```
-git push origin dev     →  Tests run (backend + frontend build)
+git push origin dev     →  Tests run (backend + worker + frontend build)
                               ↓ pass
-git checkout main
-git merge dev
-git push origin main    →  Tests run (quality gate) ‖ Zeabur auto-deploys both
-                            services in parallel on the same push — live in ~60s
+PR dev → main, merge    →  Tests run (quality gate) ‖ Cloudflare Workers Builds
+                            redeploys the Worker on the same push
 ```
 
-The GitHub Actions workflow and Zeabur's deploy are two independent reactions to the same `git push`, not a pipeline where one triggers the other — Zeabur's own GitHub integration redeploys Git-connected services on every push regardless of whether CI passes. Actions is here to catch regressions, not to gate the deploy.
+The GitHub Actions workflow and the Workers Builds deploy are two independent reactions to the same push. Actions is
+here to catch regressions, not to gate the deploy. Until the repo is connected in Workers Builds, deploy with
+`npx wrangler deploy`.
 
 Or just open a PR from `dev` → `main` and merge it.
 
@@ -269,7 +255,7 @@ A project object looks like:
 
 - **Telegram alerts**: add a cron in the backend that reads the sheet for shoots stuck below a ratio threshold and fires a message via your bot-core library.
 - **Auth**: add an API-key or JWT middleware in front of the `/projects` routes (see roadmap below — there's none today).
-- **Multi-tab sheets**: if you split shoots across multiple tabs (e.g. by year), swap `doc.sheetsByIndex[0]` in `backend/src/index.js` for logic that reads all tabs and merges rows.
+- **Multi-tab sheets**: if you split shoots across multiple tabs (e.g. by year), swap the first-sheet lookup in `loadSheet()` (`worker/index.js`; `doc.sheetsByIndex[0]` in `backend/src/index.js`) for logic that reads all tabs and merges rows.
 
 ---
 
@@ -298,6 +284,8 @@ Versioning follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATC
 - **PATCH** — bug fixes, backwards compatible (`fix:` commits)
 
 ### [Unreleased]
+
+- Moved off Zeabur: one Cloudflare Worker now serves the frontend and the API (`worker/`, Sheets REST API, no npm deps) on `workflow.accurova.com`, with the API under `/api`. Same routes, responses and admin tokens; edits now write only the changed cells.
 
 - **Breaking:** `GET /public/projects` now requires a per-client `?token=` — previously it returned every shoot to anyone with the link. Added `POST /projects/link` (admin-only) to generate/reuse a client's token, a `Client Token` sheet column to hold it, and a "Copy client link" button in the admin dashboard. The public page shows a "private link required" gate instead of data when no token is present. See [Security](#security).
 - Removed `zeabur.yaml` — it never matched Zeabur's real schema for anything (not the Template marketplace format, which it superficially resembled and which requires prebuilt Docker images rather than Git-connected services; not a documented monorepo-config format either), and never actually auto-split this repo into two services the way earlier docs claimed. §4 now documents adding both services manually through the dashboard instead.
